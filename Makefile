@@ -1,17 +1,49 @@
+TARGET = avr-proxy
+
+SRC_DIR = src
+INC_DIR = include
+BUILD_DIR = build
+
+ELF = $(BUILD_DIR)/$(TARGET)
+FLASH_0 = $(ELF)-0x00000.bin
+FLASH_4 = $(ELF)-0x40000.bin
+
+VPATH = $(SRC_DIR)
+
+SRC = $(wildcard $(SRC_DIR)/*.c)
+OBJ	= $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC))
+
+SDK_DIR = /Volumes/case-sensitive/esp-open-sdk/sdk
+
 CC = xtensa-lx106-elf-gcc
-CFLAGS = -I. -mlongcalls
-LDLIBS = -nostdlib -Wl,--start-group -lmain -lnet80211 -lwpa -llwip -lpp -lphy -Wl,--end-group -lgcc
+AR = xtensa-lx106-elf-ar
+CFLAGS = -I. -I$(INC_DIR) -Werror -Wpointer-arith -Wundef -Wall -mlongcalls -DWIFI_SSID=\"${WIFI_SSID}\" -DWIFI_PASS=\"${WIFI_PASS}\" -Wl,-EL -fno-inline-functions -mtext-section-literals -Wno-address -Werror -Wpointer-arith
+
+LDLIBS = -nostdlib -Wl,-no-check-sections -Wl,-static -Wl,--start-group -lc -lgcc -lmain -lnet80211 -lwpa -llwip -lpp -lphy -lespnow -Wl,--end-group
 LDFLAGS = -Teagle.app.v6.ld
 
-avr-proxy-0x00000.bin: avr-proxy
+.PHONY: clean flash debug checkdirs all
+
+# debug:
+# 	$(info $$OBJ is [${OBJ}])
+
+all: checkdirs $(FLASH_0)
+
+$(FLASH_0): $(ELF)
 	esptool.py elf2image $^
 
-avr-proxy: avr-proxy.o
+$(ELF): $(OBJ)
 
-avr-proxy.o: avr-proxy.c
+checkdirs: $(BUILD_DIR)
 
-flash: avr-proxy-0x00000.bin
-	esptool.py write_flash 0 avr-proxy-0x00000.bin 0x40000 avr-proxy-0x40000.bin
+$(BUILD_DIR):
+	mkdir -p $@
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+flash: $(FLASH_0)
+	esptool.py write_flash 0 $(FLASH_0) 0x40000 $(FLASH_4)
 
 clean:
-	rm -f avr-proxy avr-proxy.o avr-proxy-0x00000.bin avr-proxy-0x400000.bin
+	rm -f $(BUILD_DIR)/*

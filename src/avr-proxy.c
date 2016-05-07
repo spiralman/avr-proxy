@@ -2,13 +2,21 @@
 #include "osapi.h"
 #include "gpio.h"
 #include "os_type.h"
+#include "user_interface.h"
+
+#include "espmissingincludes.h"
+
+#include "wifi.h"
 
 static const int pin = 5;
-static volatile os_timer_t some_timer;
+static os_timer_t some_timer;
 
 void some_timerfunc(void *arg)
 {
-  os_printf("Toggling");
+  uint8 wifi_status = wifi_station_get_connect_status();
+
+  os_printf("Wifi Status: %d\n", wifi_status);
+
   //Do blinky stuff
   if (GPIO_REG_READ(GPIO_OUT_ADDRESS) & (1 << pin))
   {
@@ -24,10 +32,12 @@ void some_timerfunc(void *arg)
 
 void ICACHE_FLASH_ATTR user_init()
 {
+  wifi_init();
+
   // init gpio sussytem
   gpio_init();
 
-  uart_div_modify( 0, UART_CLK_FREQ / ( 115200 ) );
+  uart_div_modify( 0, UART_CLK_FREQ / ( 921600 ) );
 
   gpio_output_set(0, 0, (1 << pin), 0);
 
