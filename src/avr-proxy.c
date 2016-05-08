@@ -5,6 +5,8 @@
 #include "user_interface.h"
 
 #include "espmissingincludes.h"
+#include "platform.h"
+#include "httpd.h"
 
 #include "wifi.h"
 
@@ -30,9 +32,35 @@ void some_timerfunc(void *arg)
   }
 }
 
+int ICACHE_FLASH_ATTR hello_world(HttpdConnData * connData) {
+  if (connData->conn == NULL) {
+    return HTTPD_CGI_DONE;
+  }
+
+  if (connData->requestType!=HTTPD_METHOD_GET) {
+    httpdStartResponse(connData, 405);
+    httpdEndHeaders(connData);
+    return HTTPD_CGI_DONE;
+  }
+
+  httpdStartResponse(connData, 200);
+  httpdHeader(connData, "Content-Type", "text/plain");
+  httpdEndHeaders(connData);
+
+  httpdSend(connData, "Hello, world", -1);
+
+  return HTTPD_CGI_DONE;
+};
+
+HttpdBuiltInUrl builtInUrls[]={
+  {"/", hello_world, NULL}
+};
+
 void ICACHE_FLASH_ATTR user_init()
 {
   wifi_init();
+
+  httpdInit(builtInUrls, 80);
 
   // init gpio sussytem
   gpio_init();
