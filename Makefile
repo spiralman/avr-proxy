@@ -18,7 +18,7 @@ SDK_DIR = /Volumes/case-sensitive/esp-open-sdk/sdk
 CC = xtensa-lx106-elf-gcc
 AR = xtensa-lx106-elf-ar
 LD = xtensa-lx106-elf-gcc
-CFLAGS = -I. -I$(INC_DIR) -Ilibesphttpd/include -Werror -Wpointer-arith -Wundef -Wall -mlongcalls -DUSE_OPENSDK -DWIFI_SSID=\"${WIFI_SSID}\" -DWIFI_PASS=\"${WIFI_PASS}\" -Wl,-EL -fno-inline-functions -mtext-section-literals -Wno-address -Werror -Wpointer-arith
+CFLAGS = -std=gnu99 -I. -I$(INC_DIR) -Ilibesphttpd/include -Werror -Wpointer-arith -Wundef -Wall -mlongcalls -DUSE_OPENSDK -DWIFI_SSID=\"${WIFI_SSID}\" -DWIFI_PASS=\"${WIFI_PASS}\" -Wl,-EL -fno-inline-functions -mtext-section-literals -Wno-address -Werror -Wpointer-arith
 
 LDLIBS = -nostdlib -Wl,-no-check-sections -Wl,-static -Wl,--start-group -lc -lgcc -lmain -lnet80211 -lwpa -llwip -lpp -lphy -lhal -lcrypto -lesphttpd -Wl,--end-group
 LDFLAGS = -Teagle.app.v6.ld -Llibesphttpd -L $(SDK_DIR)/lib

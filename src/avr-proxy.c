@@ -6,9 +6,10 @@
 
 #include "espmissingincludes.h"
 #include "platform.h"
-#include "httpd.h"
 
 #include "wifi.h"
+#include "ssdp.h"
+#include "api.h"
 
 static const int pin = 5;
 static os_timer_t some_timer;
@@ -32,42 +33,19 @@ void some_timerfunc(void *arg)
   }
 }
 
-int ICACHE_FLASH_ATTR hello_world(HttpdConnData * connData) {
-  if (connData->conn == NULL) {
-    return HTTPD_CGI_DONE;
-  }
-
-  if (connData->requestType!=HTTPD_METHOD_GET) {
-    httpdStartResponse(connData, 405);
-    httpdEndHeaders(connData);
-    return HTTPD_CGI_DONE;
-  }
-
-  httpdStartResponse(connData, 200);
-  httpdHeader(connData, "Content-Type", "text/plain");
-  httpdEndHeaders(connData);
-
-  httpdSend(connData, "Hello, world", -1);
-
-  return HTTPD_CGI_DONE;
-};
-
-HttpdBuiltInUrl builtInUrls[]={
-  {"/", hello_world, NULL}
-};
 
 void ICACHE_FLASH_ATTR user_init()
 {
-  wifi_init();
-
-  httpdInit(builtInUrls, 80);
-
   // init gpio sussytem
   gpio_init();
 
   uart_div_modify( 0, UART_CLK_FREQ / ( 921600 ) );
 
   gpio_output_set(0, 0, (1 << pin), 0);
+
+  wifi_init();
+  ssdp_init();
+  api_init();
 
   os_printf("Running");
 
