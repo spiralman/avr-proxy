@@ -4,9 +4,17 @@
 #include "espmissingincludes.h"
 #include "ip_addr.h"
 #include "espconn.h"
+#include "mem.h"
 #include "ssdp.h"
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+typedef struct _msearch_response_t {
+  uint8 ipaddr[4];
+  int port;
+  os_timer_t responseTimer;
+  char * searchTerm;
+} msearch_response_t;
 
 static struct espconn ssdpConn;
 static esp_udp ssdpUdp;
@@ -14,15 +22,113 @@ static esp_udp ssdpUdp;
 static char * HEX = "0123456789ABCDEF";
 
 static char * ssdpURN = "urn:schemas-upnp-org:device:AVRProxy:1";
-static char * uuid = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX";
+static char * uuid = "uuid:XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX";
+int uuidLen = 0;
 
-static bool respondingToSearch = false;
-static os_timer_t searchResponseTimer;
+int cacheAge = 86400;
+
+static char * responseStart =
+  "HTTP/1.1 200 OK\r\n"
+  "CACHE-CONTROL: max-age=86400\r\n"
+  "EXT:\r\n"
+  "LOCATION: ";
+static int responseStartLen = 61;
+
+void _response_sent(void * arg) {
+  os_printf("Response sent");
+}
+
+void send_response(msearch_response_t * response, char * st) {
+  esp_udp responseUDP;
+  espconn responseConn;
+
+  unsigned char * buf = (unsigned char *)os_malloc(1024);
+  uint16 pos = 0;
+
+  responseConn.type = ESPCONN_UDP;
+  responseConn.state = ESPCONN_NONE;
+
+  os_memcpy(responseUDP.remote_ip, response->ipaddr, 4*sizeof(uint8));
+  responseUDP.remote_port = response->port;
+
+  responseConn.proto.udp = &responseUDP;
+
+  memcpy(buf, responseStart, responseStartLen);
+  pos += responseStartLen;
+
+  /* TODO: We need the device IP address */
+  memcpy(&buf[pos], "http://foobar/ssdp/device_description.xml\r\n", 43);
+  pos += 43;
+
+  memcpy(&buf[pos], "SERVER: nonos/1.0 UPnP/1.1 AVRProxy/1.0\r\n", 41);
+  pos += 41;
+
+  memcpy(&buf[pos], "ST: ", 4);
+  pos += 4;
+
+  int stLen = strlen(st);
+  memcpy(&buf[pos], st, stLen);
+  pos += stLen;
+
+  memcpy(&buf[pos], "\r\n", 2);
+  pos += 2;
+
+  memcpy(&buf[pos], "USN: ", 5);
+  pos += 5;
+
+  memcpy(&buf[pos], uuid, uuidLen);
+  pos += uuidLen;
+
+  memcpy(&buf[pos], "::", 2);
+  pos += 2;
+
+  int urnLen = strlen(ssdpURN);
+  memcpy(&buf[pos], ssdpURN, urnLen);
+  pos += urnLen;
+
+  memcpy(&buf[pos], "\r\nBOOTID.UPNP.ORG: 1\r\n\r\n", 22);
+  pos += 22;
+
+  buf[pos] = 0;
+
+  espconn_create(&responseConn);
+  /* Doesn't work without this (maybe need to mem-set 0 the conn struct?) */
+  espconn_regist_sentcb(&responseConn, _response_sent);
+
+  espconn_send(&responseConn, buf, pos);
+
+  os_free(buf);
+}
 
 void ICACHE_FLASH_ATTR respond_to_search(void * arg) {
-  os_printf("Responding to M-SEARCH\n");
-  os_timer_disarm(&searchResponseTimer);
-  respondingToSearch = false;
+  msearch_response_t * response = (msearch_response_t *)arg;
+
+  os_printf("Responding to M-SEARCH at %d.%d.%d.%d:%d\n",
+            response->ipaddr[0],
+            response->ipaddr[1],
+            response->ipaddr[2],
+            response->ipaddr[3],
+            response->port);
+
+  os_timer_disarm(&(response->responseTimer));
+
+  if (strcmp(response->searchTerm, uuid) == 0) {
+    send_response(response, uuid);
+  }
+  else if (strcmp(response->searchTerm, ssdpURN) == 0) {
+    send_response(response, ssdpURN);
+  }
+  else if (strcmp(response->searchTerm, "upnp:rootdevice") == 0) {
+    send_response(response, "upnp:rootdevice");
+  }
+  else if (strcmp(response->searchTerm, "ssdp:all") == 0) {
+    send_response(response, "upnp:rootdevice");
+    send_response(response, uuid);
+    send_response(response, ssdpURN);
+  }
+
+  os_free(response->searchTerm);
+  os_free(response);
 }
 
 void ICACHE_FLASH_ATTR ssdp_multicast_recv(void * arg, char * pdata, unsigned short len) {
@@ -58,7 +164,7 @@ void ICACHE_FLASH_ATTR ssdp_multicast_recv(void * arg, char * pdata, unsigned sh
     }
 
     if (strcmp(search, "ssdp:all") != 0
-        && (strstr(search, "uuid:") != 0 || strcmp(&search[5], uuid) !=0)
+        && strcmp(search, uuid) !=0
         && strcmp(search, ssdpURN) != 0) {
       os_printf("No match for search: %s\n", search);
       return;
@@ -73,18 +179,24 @@ void ICACHE_FLASH_ATTR ssdp_multicast_recv(void * arg, char * pdata, unsigned sh
               remote->remote_ip[3],
               remote->remote_port);
 
-    if (respondingToSearch) {
-      os_printf("Already responding to M-SEARCH; ignoring\n");
-      return;
-    }
+    msearch_response_t * response =
+      (msearch_response_t *)os_malloc(sizeof(msearch_response_t));
 
-    respondingToSearch = true;
+    int searchLen = strlen(search) + 1;
+
+    response->searchTerm = os_malloc(searchLen);
+    os_memcpy(response->searchTerm, search, searchLen);
+
+    os_memcpy(response->ipaddr, remote->remote_ip, 4*sizeof(uint8));
+    response->port = remote->remote_port;
 
     int sleepTime = os_random() % (mx * 1000);
     os_printf("Waiting %d ms to respond\n", sleepTime);
 
-    os_timer_setfn(&searchResponseTimer, respond_to_search, NULL);
-    os_timer_arm(&searchResponseTimer, sleepTime, false);
+    os_timer_setfn(&(response->responseTimer),
+                   respond_to_search,
+                   response);
+    os_timer_arm(&(response->responseTimer), sleepTime, false);
   }
 }
 
@@ -99,7 +211,7 @@ void wifi_status_cb(System_Event_t * evt) {
 
 void ICACHE_FLASH_ATTR ssdp_init() {
   uint8 macAddr[6];
-  int uuidLen = strlen(uuid);
+  uuidLen = strlen(uuid);
 
   wifi_get_macaddr(STATION_IF, macAddr);
   os_printf("MAC Address: %x:%x:%x:%x:%x:%x\n",
