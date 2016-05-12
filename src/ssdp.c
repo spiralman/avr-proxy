@@ -23,27 +23,28 @@ static char * HEX = "0123456789ABCDEF";
 
 static char * ssdpURN = "urn:schemas-upnp-org:device:AVRProxy:1";
 static char * uuid = "uuid:XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX";
-int uuidLen = 0;
+static int uuidLen = 0;
 
-int cacheAge = 86400;
+static ip_addr_t localIP;
+
+/* static int cacheAge = 86400; */
 
 static char * responseStart =
   "HTTP/1.1 200 OK\r\n"
   "CACHE-CONTROL: max-age=86400\r\n"
   "EXT:\r\n"
   "LOCATION: ";
-static int responseStartLen = 61;
 
 void _response_sent(void * arg) {
-  os_printf("Response sent");
+  os_printf("Response sent\n");
 }
 
 void send_response(msearch_response_t * response, char * st) {
   esp_udp responseUDP;
   espconn responseConn;
 
-  unsigned char * buf = (unsigned char *)os_malloc(1024);
-  uint16 pos = 0;
+  char * buf = (char *)os_malloc(1024);
+  buf[0] = 0;
 
   responseConn.type = ESPCONN_UDP;
   responseConn.state = ESPCONN_NONE;
@@ -53,49 +54,34 @@ void send_response(msearch_response_t * response, char * st) {
 
   responseConn.proto.udp = &responseUDP;
 
-  memcpy(buf, responseStart, responseStartLen);
-  pos += responseStartLen;
+  strcat(buf, responseStart);
 
   /* TODO: We need the device IP address */
-  memcpy(&buf[pos], "http://foobar/ssdp/device_description.xml\r\n", 43);
-  pos += 43;
+  strcat(buf, "http://");
 
-  memcpy(&buf[pos], "SERVER: nonos/1.0 UPnP/1.1 AVRProxy/1.0\r\n", 41);
-  pos += 41;
+  os_sprintf(&buf[strlen(buf)], IPSTR, IP2STR(&localIP));
 
-  memcpy(&buf[pos], "ST: ", 4);
-  pos += 4;
+  strcat(buf, ":80/ssdp/device_description.xml\r\n");
 
-  int stLen = strlen(st);
-  memcpy(&buf[pos], st, stLen);
-  pos += stLen;
+  strcat(buf, "SERVER: nonos/1.0 UPnP/1.1 AVRProxy/1.0\r\nST: ");
 
-  memcpy(&buf[pos], "\r\n", 2);
-  pos += 2;
+  strcat(buf, st);
 
-  memcpy(&buf[pos], "USN: ", 5);
-  pos += 5;
+  strcat(buf, "\r\nUSN: ");
 
-  memcpy(&buf[pos], uuid, uuidLen);
-  pos += uuidLen;
+  strcat(buf, uuid);
 
-  memcpy(&buf[pos], "::", 2);
-  pos += 2;
+  strcat(buf, "::");
 
-  int urnLen = strlen(ssdpURN);
-  memcpy(&buf[pos], ssdpURN, urnLen);
-  pos += urnLen;
+  strcat(buf, ssdpURN);
 
-  memcpy(&buf[pos], "\r\nBOOTID.UPNP.ORG: 1\r\n\r\n", 22);
-  pos += 22;
-
-  buf[pos] = 0;
+  strcat(buf, "\r\nBOOTID.UPNP.ORG: 1\r\n\r\n");
 
   espconn_create(&responseConn);
   /* Doesn't work without this (maybe need to mem-set 0 the conn struct?) */
   espconn_regist_sentcb(&responseConn, _response_sent);
 
-  espconn_send(&responseConn, buf, pos);
+  espconn_send(&responseConn, (uint8 *)buf, (uint16)strlen(buf));
 
   os_free(buf);
 }
@@ -204,6 +190,8 @@ void wifi_status_cb(System_Event_t * evt) {
   if (evt->event == EVENT_STAMODE_GOT_IP) {
     ip_addr_t remoteIP;
     IP4_ADDR(&remoteIP, 239, 255, 255, 250);
+
+    localIP = evt->event_info.got_ip.ip;
 
     espconn_igmp_join(&evt->event_info.got_ip.ip, &remoteIP);
   }
