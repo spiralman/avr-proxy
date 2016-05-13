@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0"
+      configId="configuration number">
+  <specVersion>
+    <major>1</major>
+    <minor>1</minor>
+  </specVersion>
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:AVRProxy:1</deviceType>
+    <friendlyName>Denon AVR HTTP Proxy</friendlyName>
+    <manufacturer>Thomas Stephens</manufacturer>
+    <manufacturerURL>http://github.com/spiralman</manufacturerURL>
+    <modelDescription>A proxy providing an HTTP interface to Denon's line-based TCP control protocol</modelDescription>
+    <modelName>AVRProxy</modelName>
+    <modelNumber>100</modelNumber>
+    <UDN>%uuid%</UDN>
+  </device>
+</root>

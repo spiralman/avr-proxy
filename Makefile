@@ -20,7 +20,7 @@ AR = xtensa-lx106-elf-ar
 LD = xtensa-lx106-elf-gcc
 CFLAGS = -std=gnu99 -I. -I$(INC_DIR) -Ilibesphttpd/include -Werror -Wpointer-arith -Wundef -Wall -mlongcalls -DUSE_OPENSDK -DWIFI_SSID=\"${WIFI_SSID}\" -DWIFI_PASS=\"${WIFI_PASS}\" -Wl,-EL -fno-inline-functions -mtext-section-literals -Wno-address -Werror -Wpointer-arith
 
-LDLIBS = -nostdlib -Wl,-no-check-sections -Wl,-static -Wl,--start-group -lc -lgcc -lmain -lnet80211 -lwpa -llwip -lpp -lphy -lhal -lcrypto -lesphttpd -Wl,--end-group
+LDLIBS = -nostdlib -Wl,-no-check-sections -Wl,-static -Wl,--start-group -lc -lgcc -lmain -lnet80211 -lwpa -llwip -lpp -lphy -lhal -lcrypto -lesphttpd -lwebpages-espfs -Wl,--end-group
 LDFLAGS = -Teagle.app.v6.ld -Llibesphttpd -L $(SDK_DIR)/lib
 
 .PHONY: clean flash debug checkdirs all libesphttpd
@@ -36,6 +36,7 @@ libesphttpd/Makefile:
 	$(Q) git submodule update
 
 libesphttpd: libesphttpd/Makefile
+	find html -name '*~' -delete
 	$(Q) make -C libesphttpd USE_OPENSDK=yes
 
 $(FLASH_0): $(ELF)

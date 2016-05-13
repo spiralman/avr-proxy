@@ -16,10 +16,6 @@ static os_timer_t some_timer;
 
 void some_timerfunc(void *arg)
 {
-  uint8 wifi_status = wifi_station_get_connect_status();
-
-  os_printf("Wifi Status: %d\n", wifi_status);
-
   //Do blinky stuff
   if (GPIO_REG_READ(GPIO_OUT_ADDRESS) & (1 << pin))
   {

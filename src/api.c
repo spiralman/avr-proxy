@@ -1,7 +1,22 @@
 #include "os_type.h"
+#include "osapi.h"
 #include "espmissingincludes.h"
 #include "platform.h"
+#include "espfs.h"
 #include "httpd.h"
+#include "httpdespfs.h"
+#include "webpages-espfs.h"
+#include "ssdp.h"
+
+int ICACHE_FLASH_ATTR
+ssdp_dev_template(HttpdConnData * connData, char * token, void ** arg) {
+  if (token == NULL) { return HTTPD_CGI_DONE; }
+
+  if (strcmp(token, "uuid") == 0) { httpdSend(connData, ssdp_uuid(), -1); }
+
+  return HTTPD_CGI_DONE;
+}
+
 
 int ICACHE_FLASH_ATTR hello_world(HttpdConnData * connData) {
   if (connData->conn == NULL) {
@@ -24,9 +39,12 @@ int ICACHE_FLASH_ATTR hello_world(HttpdConnData * connData) {
 };
 
 HttpdBuiltInUrl builtInUrls[]={
-  {"/", hello_world, NULL}
+  {"/", hello_world, NULL},
+  {"/ssdp/device_description.xml", cgiEspFsTemplate, ssdp_dev_template},
+  {NULL, NULL, NULL}
 };
 
 void ICACHE_FLASH_ATTR api_init() {
-    httpdInit(builtInUrls, 80);
+  espFsInit((void*)(webpages_espfs_start));
+  httpdInit(builtInUrls, 80);
 };

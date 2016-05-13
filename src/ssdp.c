@@ -197,6 +197,10 @@ void wifi_status_cb(System_Event_t * evt) {
   }
 }
 
+char * ICACHE_FLASH_ATTR ssdp_uuid() {
+  return uuid;
+}
+
 void ICACHE_FLASH_ATTR ssdp_init() {
   uint8 macAddr[6];
   uuidLen = strlen(uuid);
