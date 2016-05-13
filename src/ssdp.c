@@ -16,6 +16,8 @@ typedef struct _msearch_response_t {
   char * searchTerm;
 } msearch_response_t;
 
+os_timer_t notifyTimer;
+
 static struct espconn ssdpConn;
 static esp_udp ssdpUdp;
 
@@ -27,7 +29,9 @@ static int uuidLen = 0;
 
 static ip_addr_t localIP;
 
-/* static int cacheAge = 86400; */
+#define MAX_SLEEP 0x68D7A3;
+
+static int burstCount = 0;
 
 static char * responseStart =
   "HTTP/1.1 200 OK\r\n"
@@ -251,6 +255,32 @@ void ICACHE_FLASH_ATTR ssdp_multicast_recv(void * arg, char * pdata, unsigned sh
   }
 }
 
+void ICACHE_FLASH_ATTR notify_cb(void * arg) {
+  burstCount++;
+
+  send_notify("upnp:rootdevice", "upnp:rootdevice");
+  send_notify(uuid, NULL);
+  send_notify(ssdpURN, ssdpURN);
+
+  if (burstCount == 1) {
+    int waitTime = 200 + (os_random() % 100);
+    /* os_printf("Waiting: %d\n", waitTime); */
+
+    os_timer_disarm(&notifyTimer);
+    os_timer_arm(&notifyTimer, waitTime, true);
+  }
+  else if (burstCount == 3) {
+    /* We're supposed to wait about the cache's max age/2, but we can
+       only wait up to an hour; that seems slow enough */
+    int waitTime = MAX_SLEEP;
+    /* os_printf("Waiting: %d\n", waitTime); */
+
+    os_timer_disarm(&notifyTimer);
+    os_timer_arm(&notifyTimer, waitTime, true);
+    burstCount = 0;
+  }
+}
+
 void ICACHE_FLASH_ATTR wifi_status_cb(System_Event_t * evt) {
   if (evt->event == EVENT_STAMODE_GOT_IP) {
     ip_addr_t remoteIP;
@@ -260,7 +290,13 @@ void ICACHE_FLASH_ATTR wifi_status_cb(System_Event_t * evt) {
 
     espconn_igmp_join(&evt->event_info.got_ip.ip, &remoteIP);
 
-    send_notify("upnp:rootdevice", "upnp:rootdevice");
+    int waitTime = os_random() % 100;
+    /* os_printf("Waiting: %d\n", waitTime); */
+
+    os_timer_setfn(&notifyTimer,
+                   notify_cb,
+                   NULL);
+    os_timer_arm(&notifyTimer, waitTime, true);
   }
 }
 
