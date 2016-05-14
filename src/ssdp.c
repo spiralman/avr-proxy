@@ -188,7 +188,7 @@ void ICACHE_FLASH_ATTR respond_to_search(void * arg) {
 
 void ICACHE_FLASH_ATTR ssdp_multicast_recv(void * arg, char * pdata, unsigned short len) {
   if (os_strncmp("M-SEARCH * HTTP/1.1", pdata, MIN(len, 19)) == 0) {
-    /* os_printf("Received SSDP Search\n"); */
+    os_printf("Received SSDP Search\n");
     int mx = 0;
     char * search = NULL;
     remot_info *remote = NULL;
