@@ -14,13 +14,20 @@
 static struct espconn avrConn;
 static esp_tcp avrTcp;
 
-static bool avrConnected = false;
-static int avrConnectTime = 0;
-
 static os_timer_t responseTimer;
 static bool awaitingResponse = false;
 static bool responseReady = false;
 static char responseBuf[256];
+
+/* Documented max command length */
+static char cmd[135];
+static int cmdLen;
+
+static int cmdErr = ESPCONN_OK;
+
+static ConnTypePtr openCmdConn = NULL;
+static uint8 openCmdRemoteIp[4];
+static int openCmdRemotePort;
 
 int ICACHE_FLASH_ATTR
 ssdp_dev_template(HttpdConnData * connData, char * token, void ** arg) {
@@ -35,10 +42,17 @@ void ICACHE_FLASH_ATTR response_done_cb(void * arg) {
   awaitingResponse = false;
   responseReady = true;
   os_timer_disarm(&responseTimer);
+
+  /* Pretend like some data was sent, so libesphttpd calls the CGI
+     callback again to respond asynchronously */
+  httpdSentCb(openCmdConn, (char *)openCmdRemoteIp, openCmdRemotePort);
+
+  openCmdConn = NULL;
 }
 
 void ICACHE_FLASH_ATTR cmd_sent_cb(void * arg) {
   os_printf("sent\n");
+  os_timer_arm(&responseTimer, 200, false);
 }
 
 void ICACHE_FLASH_ATTR cmd_received_cb(void * arg, char * data, unsigned short len) {
@@ -51,25 +65,29 @@ void ICACHE_FLASH_ATTR cmd_received_cb(void * arg, char * data, unsigned short l
 
 void ICACHE_FLASH_ATTR cmd_connected_cb(void * arg) {
   os_printf("connected\n");
-  avrConnected = true;
-  avrConnectTime = system_get_time();
+  espconn_send(&avrConn, (unsigned char *)cmd, cmdLen);
 }
 
 void ICACHE_FLASH_ATTR cmd_disconnected_cb(void * arg) {
   os_printf("disconnected\n");
-  avrConnected = false;
 }
 
 void ICACHE_FLASH_ATTR cmd_reconnect_cb(void * arg, sint8 err) {
   os_printf("reconnect: %d\n", err);
 
+  awaitingResponse = false;
+  responseReady = true;
+
+  cmdErr = err;
+  /* Pretend like some data was sent, so libesphttpd calls the CGI
+     callback again to respond asynchronously */
+  httpdSentCb(openCmdConn, (char *)openCmdRemoteIp, openCmdRemotePort);
+
+  openCmdConn = NULL;
 }
 
 int ICACHE_FLASH_ATTR send_command(HttpdConnData * connData) {
   if (!awaitingResponse && !responseReady) {
-    /* Documented max command length */
-    char cmd[135];
-    int cmdLen;
 
     if (connData->conn==NULL) {
       //Connection aborted. Clean up.
@@ -92,29 +110,49 @@ int ICACHE_FLASH_ATTR send_command(HttpdConnData * connData) {
     cmd[cmdLen++] = '\r';
     cmd[cmdLen] = 0;
 
-    os_printf("Sending %s\n", cmd);
+    os_printf("Queuing %s\n", cmd);
 
-    espconn_send(&avrConn, (unsigned char *)cmd, cmdLen);
-    os_timer_arm(&responseTimer, 200, false);
+    os_printf("connecting\n");
+    cmdErr = ESPCONN_OK;
+    espconn_connect(&avrConn);
 
-    httpdStartResponse(connData, 200);
-    httpdEndHeaders(connData);
+    openCmdConn = connData->conn;
+    memcpy(openCmdRemoteIp, connData->remote_ip, 4*sizeof(uint8));
+    openCmdRemotePort = connData->remote_port;
 
     awaitingResponse = true;
     return HTTPD_CGI_MORE;
   }
   else if(responseReady) {
-    os_printf("\nresponse:\n%s\n", responseBuf);
-    httpdSend(connData, responseBuf, -1);
+    if (cmdErr == ESPCONN_OK) {
+      os_printf("\nresponse:\n%s\n", responseBuf);
+      httpdStartResponse(connData, 200);
+      httpdEndHeaders(connData);
+
+      httpdSend(connData, responseBuf, -1);
+    }
+    else {
+      char errMessage[25];
+
+      os_sprintf(errMessage, "Communication error: %d\n", cmdErr);
+      httpdStartResponse(connData, 500);
+      httpdEndHeaders(connData);
+
+      httpdSend(connData, errMessage, -1);
+    }
+
     responseBuf[0] = 0;
     responseReady = false;
 
-    os_printf("sent\n");
+    cmd[0] = 0;
+    cmdLen = 0;
+    espconn_disconnect(&avrConn);
+
     return HTTPD_CGI_DONE;
   }
   else {
     os_printf(".");
-    httpdSend(connData, "\n", 1);
+
     return HTTPD_CGI_MORE;
   }
 }
@@ -146,13 +184,6 @@ HttpdBuiltInUrl builtInUrls[]={
   {NULL, NULL, NULL}
 };
 
-void ICACHE_FLASH_ATTR api_wifi_status_cb(System_Event_t * evt) {
-  if (evt->event == EVENT_STAMODE_GOT_IP) {
-    os_printf("connecting\n");
-    espconn_connect(&avrConn);
-  }
-}
-
 void ICACHE_FLASH_ATTR api_init() {
   espFsInit((void*)(webpages_espfs_start));
   httpdInit(builtInUrls, 80);
@@ -180,6 +211,4 @@ void ICACHE_FLASH_ATTR api_init() {
   espconn_regist_connectcb(&avrConn, cmd_connected_cb);
   espconn_regist_disconcb(&avrConn, cmd_disconnected_cb);
   espconn_regist_reconcb(&avrConn, cmd_reconnect_cb);
-
-  wifi_set_event_handler_cb(api_wifi_status_cb);
 };
