@@ -14,6 +14,8 @@
 static struct espconn avrConn;
 static esp_tcp avrTcp;
 
+static os_timer_t connectPauseTimer;
+
 static os_timer_t responseTimer;
 static bool awaitingResponse = false;
 static bool responseReady = false;
@@ -36,6 +38,13 @@ ssdp_dev_template(HttpdConnData * connData, char * token, void ** arg) {
   if (strcmp(token, "uuid") == 0) { httpdSend(connData, ssdp_uuid(), -1); }
 
   return HTTPD_CGI_DONE;
+}
+
+void ICACHE_FLASH_ATTR connect_pause_cb(void * arg) {
+  os_timer_disarm(&connectPauseTimer);
+
+  os_printf("reconnecting\n");
+  espconn_connect(&avrConn);
 }
 
 void ICACHE_FLASH_ATTR response_done_cb(void * arg) {
@@ -73,17 +82,24 @@ void ICACHE_FLASH_ATTR cmd_disconnected_cb(void * arg) {
 }
 
 void ICACHE_FLASH_ATTR cmd_reconnect_cb(void * arg, sint8 err) {
-  os_printf("reconnect: %d\n", err);
+  os_printf("reconnect error: %d\n", err);
 
-  awaitingResponse = false;
-  responseReady = true;
+  /* Happens when we try to reconnect too quickly, if we get requests
+     too close together; wait and try again */
+  if (err == ESPCONN_RST) {
+    os_timer_arm(&connectPauseTimer, 100, false);
+  }
+  else {
+    awaitingResponse = false;
+    responseReady = true;
 
-  cmdErr = err;
-  /* Pretend like some data was sent, so libesphttpd calls the CGI
-     callback again to respond asynchronously */
-  httpdSentCb(openCmdConn, (char *)openCmdRemoteIp, openCmdRemotePort);
+    cmdErr = err;
+    /* Pretend like some data was sent, so libesphttpd calls the CGI
+       callback again to respond asynchronously */
+    httpdSentCb(openCmdConn, (char *)openCmdRemoteIp, openCmdRemotePort);
 
-  openCmdConn = NULL;
+    openCmdConn = NULL;
+  }
 }
 
 int ICACHE_FLASH_ATTR send_command(HttpdConnData * connData) {
@@ -192,8 +208,10 @@ void ICACHE_FLASH_ATTR api_init() {
                  response_done_cb,
                  NULL);
 
-  /* TODO: open and close connection dynamically, so we're not sitting
-     on it while idle */
+  os_timer_setfn(&connectPauseTimer,
+                 connect_pause_cb,
+                 NULL);
+
   avrConn.type = ESPCONN_TCP;
   avrConn.state = ESPCONN_NONE;
 
