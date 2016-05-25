@@ -1,4 +1,5 @@
 #include "os_type.h"
+#include "gpio.h"
 #include "osapi.h"
 #include "user_interface.h"
 #include "espmissingincludes.h"
@@ -103,6 +104,12 @@ void ICACHE_FLASH_ATTR cmd_reconnect_cb(void * arg, sint8 err) {
      too close together; wait and try again */
   if (err == ESPCONN_RST) {
     os_timer_arm(&connectPauseTimer, 100, false);
+  }
+  else if (err == ESPCONN_CONN) {
+    /* Only solution to this (so far) seems to be to reboot; note,
+       need to force GPIO 0 and 2 high to boot correctly */
+    gpio_output_set(1 | (1 << 2), 0, 0, 0);
+    system_restart();
   }
   else {
     awaitingResponse = false;
