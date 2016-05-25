@@ -31,6 +31,20 @@ static ConnTypePtr openCmdConn = NULL;
 static uint8 openCmdRemoteIp[4];
 static int openCmdRemotePort;
 
+#define OS_QUEUE_LEN 4
+static os_event_t osQueue[OS_QUEUE_LEN];
+
+#define OS_TASK_DISCONNECT 0
+
+
+void ICACHE_FLASH_ATTR os_task_handler(os_event_t * evt) {
+  switch (evt->sig) {
+  case OS_TASK_DISCONNECT:
+    espconn_disconnect(&avrConn);
+    break;
+  }
+}
+
 int ICACHE_FLASH_ATTR
 ssdp_dev_template(HttpdConnData * connData, char * token, void ** arg) {
   if (token == NULL) { return HTTPD_CGI_DONE; }
@@ -79,6 +93,7 @@ void ICACHE_FLASH_ATTR cmd_connected_cb(void * arg) {
 
 void ICACHE_FLASH_ATTR cmd_disconnected_cb(void * arg) {
   os_printf("disconnected\n");
+  avrConn.state = ESPCONN_NONE;
 }
 
 void ICACHE_FLASH_ATTR cmd_reconnect_cb(void * arg, sint8 err) {
@@ -162,7 +177,7 @@ int ICACHE_FLASH_ATTR send_command(HttpdConnData * connData) {
 
     cmd[0] = 0;
     cmdLen = 0;
-    espconn_disconnect(&avrConn);
+    system_os_post(USER_TASK_PRIO_0, OS_TASK_DISCONNECT, 0);
 
     return HTTPD_CGI_DONE;
   }
@@ -201,6 +216,8 @@ HttpdBuiltInUrl builtInUrls[]={
 };
 
 void ICACHE_FLASH_ATTR api_init() {
+  system_os_task(os_task_handler, USER_TASK_PRIO_0, osQueue, OS_QUEUE_LEN);
+
   espFsInit((void*)(webpages_espfs_start));
   httpdInit(builtInUrls, 80);
 
