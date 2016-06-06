@@ -165,6 +165,7 @@ int ICACHE_FLASH_ATTR send_command(HttpdConnData * connData) {
     if (cmdErr == ESPCONN_OK) {
       os_printf("\nresponse:\n%s\n", responseBuf);
       httpdStartResponse(connData, 200);
+      httpdHeader(connData, "Content-Type", "text/plain");
       httpdEndHeaders(connData);
 
       httpdSend(connData, responseBuf, -1);
@@ -174,6 +175,7 @@ int ICACHE_FLASH_ATTR send_command(HttpdConnData * connData) {
 
       os_sprintf(errMessage, "Communication error: %d\n", cmdErr);
       httpdStartResponse(connData, 500);
+      httpdHeader(connData, "Content-Type", "text/plain");
       httpdEndHeaders(connData);
 
       httpdSend(connData, errMessage, -1);
